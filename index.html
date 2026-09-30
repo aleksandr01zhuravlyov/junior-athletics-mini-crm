@@ -6,7 +6,7 @@
   <title>Junior Athletics Mini CRM</title>
 
   <!-- Connect the CSS file (the looks) -->
-  <link rel="stylesheet" href="style.css?v=trainings2">
+  <link rel="stylesheet" href="style.css?v=memberships1">
 </head>
 <body>
 
@@ -120,14 +120,7 @@
       <label>Date of birth <input id="f-dob" type="date" required></label>
       <label>Parent name <input id="f-parent" required></label>
       <label>Parent phone <input id="f-phone" type="tel" required></label>
-      <label>Membership type
-        <select id="f-membership">
-          <option>Monthly</option>
-          <option>10-Session Pass</option>
-          <option>Drop-in</option>
-        </select>
-      </label>
-      <label>Sessions remaining <input id="f-sessions" type="number" min="0" required></label>
+      <p class="message">Memberships are added in the student's profile (View).</p>
       <div class="dialog-buttons">
         <button type="button" id="form-cancel">Cancel</button>
         <button type="submit" class="btn-primary" id="form-save">Save</button>
@@ -166,7 +159,7 @@
     <p class="message" id="attendance-info"></p>
     <p class="message error" id="attendance-error" hidden></p>
     <table>
-      <thead><tr><th>Student</th><th>Attendance</th></tr></thead>
+      <thead><tr><th>Student</th><th>Membership</th><th>Attendance</th></tr></thead>
       <tbody id="attendance-body"></tbody>
     </table>
     <p class="message" id="attendance-summary"></p>
@@ -175,10 +168,45 @@
     </div>
   </dialog>
 
+  <!-- Membership add / edit form -->
+  <dialog id="membership-dialog">
+    <form id="membership-form">
+      <h2 id="membership-form-title">Add Membership</h2>
+      <label>Type
+        <select id="m-type"></select>
+      </label>
+      <label>Start date <input id="m-start" type="date" required></label>
+      <label>Expiration date <input id="m-end" type="date" required></label>
+      <label id="m-purchased-label">Sessions purchased <input id="m-purchased" type="number" min="1" step="1"></label>
+      <label id="m-remaining-label">Sessions remaining <input id="m-remaining" type="number" min="0" step="1"></label>
+      <label>Price <input id="m-price" type="number" min="0" step="0.01" value="0" required></label>
+      <label id="m-status-label">Status
+        <select id="m-status">
+          <option value="active">Active</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <p class="message" id="m-hint"></p>
+      <p class="message error" id="membership-form-error" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="membership-cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="membership-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Details view -->
-  <dialog id="details-dialog">
+  <dialog id="details-dialog" class="wide">
     <h2 id="details-title"></h2>
     <dl id="details-body"></dl>
+    <h3 class="history-title">Current Membership</h3>
+    <div id="current-membership"></div>
+    <div class="section-head">
+      <h3 class="history-title">Membership History</h3>
+      <button type="button" class="btn-primary" id="add-membership-btn">+ Add Membership</button>
+    </div>
+    <p class="message error" id="membership-error" hidden></p>
+    <div id="membership-history"></div>
     <h3 class="history-title">Attendance History</h3>
     <div id="attendance-history"></div>
     <div class="dialog-buttons">
@@ -189,7 +217,8 @@
   <!-- Connect the JavaScript file (the brain). It goes last so the page exists first. -->
   <!-- Official Supabase client (loads as global "supabase"), then our settings, then our code -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=trainings2"></script>
-  <script src="script.js?v=trainings2"></script>
+  <script src="config.js?v=memberships1"></script>
+  <script src="memberships.js?v=memberships1"></script>
+  <script src="script.js?v=memberships1"></script>
 </body>
 </html>
