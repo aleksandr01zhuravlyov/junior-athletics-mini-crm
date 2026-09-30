@@ -12,11 +12,31 @@
 
   <!-- Top bar -->
   <header class="header">
-    <h1>Junior Athletics</h1>
-    <p>Mini CRM</p>
+    <div>
+      <h1>Junior Athletics</h1>
+      <p>Mini CRM</p>
+    </div>
+    <div class="user-box" id="user-box" hidden>
+      <span id="user-email"></span>
+      <button type="button" id="logout-btn">Log out</button>
+    </div>
   </header>
 
-  <main class="container">
+  <!-- Login screen (shown when nobody is logged in) -->
+  <main class="container" id="login-view" hidden>
+    <form class="login-card" id="login-form">
+      <h2>Log in</h2>
+      <label>Email <input id="login-email" type="email" autocomplete="username" required></label>
+      <label>Password <input id="login-password" type="password" autocomplete="current-password" required></label>
+      <p class="message error" id="login-error" hidden></p>
+      <button type="submit" class="btn-primary" id="login-submit">Log in</button>
+    </form>
+  </main>
+
+  <!-- The CRM (shown only when logged in) -->
+  <main class="container" id="app-view" hidden>
+
+    <p class="message error" id="app-error" hidden></p>
 
     <!-- Dashboard: the boxes at the top -->
     <section class="dashboard">
@@ -56,6 +76,7 @@
         <!-- JavaScript fills this empty body with one row per student -->
         <tbody id="student-table-body"></tbody>
       </table>
+      <p class="message" id="table-message">Loading students...</p>
     </section>
 
   </main>
@@ -66,7 +87,7 @@
       <h2 id="form-title">Add Student</h2>
       <label>First name <input id="f-first" required></label>
       <label>Last name <input id="f-last" required></label>
-      <label>Age <input id="f-age" type="number" min="1" max="99" required></label>
+      <label>Date of birth <input id="f-dob" type="date" required></label>
       <label>Parent name <input id="f-parent" required></label>
       <label>Parent phone <input id="f-phone" type="tel" required></label>
       <label>Membership type
@@ -79,7 +100,7 @@
       <label>Sessions remaining <input id="f-sessions" type="number" min="0" required></label>
       <div class="dialog-buttons">
         <button type="button" id="form-cancel">Cancel</button>
-        <button type="submit" class="btn-primary">Save</button>
+        <button type="submit" class="btn-primary" id="form-save">Save</button>
       </div>
     </form>
   </dialog>
@@ -94,6 +115,9 @@
   </dialog>
 
   <!-- Connect the JavaScript file (the brain). It goes last so the page exists first. -->
+  <!-- Official Supabase client (loads as global "supabase"), then our settings, then our code -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
