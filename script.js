@@ -91,7 +91,10 @@ function showError(text) {
 // =====================================================
 function showLogin() {
   students = [];
+  trainings = [];
   render(); // wipe the previous user's rows from the page
+  renderTrainings();
+  showTab("students");
   appView.hidden = true;
   userBox.hidden = true;
   loginView.hidden = false;
@@ -354,6 +357,7 @@ function showDetails(id) {
     <dt>Sessions remaining</dt><dd>${s.sessionsRemaining}</dd>
   `;
   detailsDialog.showModal();
+  loadAttendanceHistory(id);
 }
 
 async function deleteStudent(id) {
@@ -382,6 +386,384 @@ addButton.addEventListener("click", openAddForm);
 form.addEventListener("submit", saveStudentFromForm);
 document.getElementById("form-cancel").addEventListener("click", () => formDialog.close());
 document.getElementById("details-close").addEventListener("click", () => detailsDialog.close());
+
+
+// =====================================================
+// 7b. TRAININGS: browse by month, create / edit / cancel / delete
+// Data lives in the Supabase "trainings" table (one row per session).
+// =====================================================
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+const trainingsView = document.getElementById("trainings-view");
+const studentsView = document.getElementById("students-view");
+const trainingList = document.getElementById("training-list");
+const trainingMessage = document.getElementById("training-message");
+const monthSelect = document.getElementById("month-select");
+const yearInput = document.getElementById("year-input");
+const trainingDialog = document.getElementById("training-dialog");
+const trainingForm = document.getElementById("training-form");
+const trainingFormError = document.getElementById("training-form-error");
+const trainingSave = document.getElementById("training-save");
+
+let trainings = [];
+let editingTrainingId = null;   // null = creating a new training
+let trainingsRequest = 0;       // ignores answers from an older month if you click fast
+const todayDate = new Date();
+let viewYear = todayDate.getFullYear();
+let viewMonth = todayDate.getMonth() + 1; // 1-12
+
+MONTH_NAMES.forEach((name, i) => monthSelect.add(new Option(name, i + 1)));
+
+// Dates are kept as "YYYY-MM-DD" text and never converted through time zones.
+function pad(n) { return String(n).padStart(2, "0"); }
+function shortTime(t) { return String(t).slice(0, 5); }   // "17:00:00" -> "17:00"
+function longDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const weekday = new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "long" });
+  return `${weekday}, ${pad(d)} ${MONTH_NAMES[m - 1]} ${y}`;
+}
+
+function showTab(name) {
+  const onTrainings = name === "trainings";
+  studentsView.hidden = onTrainings;
+  trainingsView.hidden = !onTrainings;
+  document.getElementById("tab-students").classList.toggle("active", !onTrainings);
+  document.getElementById("tab-trainings").classList.toggle("active", onTrainings);
+  if (onTrainings) loadTrainings();
+}
+
+document.querySelector(".tabs").addEventListener("click", function (event) {
+  const tab = event.target.closest("button[data-tab]");
+  if (tab) showTab(tab.dataset.tab);
+});
+
+function setMonth(year, month) {
+  // month may be 0 or 13 when stepping past the ends of the year
+  const d = new Date(year, month - 1, 1);
+  viewYear = d.getFullYear();
+  viewMonth = d.getMonth() + 1;
+  loadTrainings();
+}
+document.getElementById("month-prev").addEventListener("click", () => setMonth(viewYear, viewMonth - 1));
+document.getElementById("month-next").addEventListener("click", () => setMonth(viewYear, viewMonth + 1));
+document.getElementById("month-today").addEventListener("click", () => setMonth(todayDate.getFullYear(), todayDate.getMonth() + 1));
+monthSelect.addEventListener("change", () => setMonth(viewYear, Number(monthSelect.value)));
+yearInput.addEventListener("change", function () {
+  const y = Number(yearInput.value);
+  if (y >= 2000 && y <= 2100) setMonth(y, viewMonth);
+  else yearInput.value = viewYear;
+});
+
+async function loadTrainings() {
+  monthSelect.value = viewMonth;
+  yearInput.value = viewYear;
+  showError("");
+  trainingMessage.textContent = "Loading trainings...";
+  trainingMessage.hidden = false;
+  const request = ++trainingsRequest;
+
+  const from = `${viewYear}-${pad(viewMonth)}-01`;
+  const next = new Date(viewYear, viewMonth, 1); // first day of the following month
+  const to = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-01`;
+
+  const { data, error } = await db
+    .from("trainings")
+    .select("*")
+    .gte("training_date", from)
+    .lt("training_date", to)
+    .order("training_date")
+    .order("start_time");
+
+  if (request !== trainingsRequest) return; // a newer month was requested meanwhile
+  if (error) {
+    trainings = [];
+    renderTrainings();
+    trainingMessage.hidden = true;
+    showError("Could not load trainings: " + error.message);
+    return;
+  }
+  trainings = data;
+  renderTrainings();
+}
+
+function findTraining(id) {
+  return trainings.find(t => t.id === id);
+}
+
+function renderTrainings() {
+  trainingList.innerHTML = "";
+  let lastDate = null;
+  trainings.forEach(function (t) {
+    if (t.training_date !== lastDate) {
+      lastDate = t.training_date;
+      const heading = document.createElement("h3");
+      heading.className = "day-heading";
+      heading.textContent = longDate(t.training_date);
+      trainingList.appendChild(heading);
+    }
+    const row = document.createElement("div");
+    row.className = "training-row" + (t.status === "cancelled" ? " is-cancelled" : "");
+    row.dataset.id = t.id;
+    const details = [t.coach && "Coach: " + t.coach, t.location].filter(Boolean).map(escapeHtml).join(" · ");
+    row.innerHTML = `
+      <div class="training-time">${shortTime(t.start_time)}–${shortTime(t.end_time)}</div>
+      <div class="training-main">
+        <strong>${escapeHtml(t.name)}</strong>
+        <div class="training-sub">${details}</div>
+      </div>
+      <span class="badge badge-${t.status}">${t.status}</span>
+      <div>
+        <button data-action="open" class="btn-small">Attendance</button>
+        <button data-action="edit" class="btn-small">Edit</button>
+        ${t.status === "cancelled" ? "" : '<button data-action="cancel" class="btn-small">Cancel</button>'}
+        <button data-action="delete" class="btn-small btn-delete">Delete</button>
+      </div>
+    `;
+    trainingList.appendChild(row);
+  });
+  trainingMessage.textContent = `No trainings in ${MONTH_NAMES[viewMonth - 1]} ${viewYear}.`;
+  trainingMessage.hidden = trainings.length > 0;
+}
+
+trainingList.addEventListener("click", function (event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = button.closest(".training-row").dataset.id;
+  const actions = {
+    open: openAttendance, edit: openTrainingForm,
+    cancel: cancelTraining, delete: deleteTraining
+  };
+  actions[button.dataset.action](id);
+});
+
+// ----- create / edit -----
+function openTrainingForm(id) {
+  editingTrainingId = typeof id === "string" ? id : null;
+  trainingForm.reset();
+  trainingFormError.hidden = true;
+  if (editingTrainingId) {
+    const t = findTraining(editingTrainingId);
+    document.getElementById("training-form-title").textContent = "Edit Training";
+    document.getElementById("t-date").value = t.training_date;
+    document.getElementById("t-start").value = shortTime(t.start_time);
+    document.getElementById("t-end").value = shortTime(t.end_time);
+    document.getElementById("t-name").value = t.name;
+    document.getElementById("t-coach").value = t.coach;
+    document.getElementById("t-location").value = t.location;
+    document.getElementById("t-status").value = t.status;
+  } else {
+    document.getElementById("training-form-title").textContent = "New Training";
+    // default to the first day of the month being viewed (or today if it is in it)
+    const inThisMonth = todayDate.getFullYear() === viewYear && todayDate.getMonth() + 1 === viewMonth;
+    document.getElementById("t-date").value = `${viewYear}-${pad(viewMonth)}-${pad(inThisMonth ? todayDate.getDate() : 1)}`;
+  }
+  trainingDialog.showModal();
+}
+
+trainingForm.addEventListener("submit", async function (event) {
+  event.preventDefault();
+  const values = {
+    training_date: document.getElementById("t-date").value,
+    start_time: document.getElementById("t-start").value,
+    end_time: document.getElementById("t-end").value,
+    name: document.getElementById("t-name").value.trim(),
+    coach: document.getElementById("t-coach").value.trim(),
+    location: document.getElementById("t-location").value.trim(),
+    status: document.getElementById("t-status").value
+  };
+  if (values.end_time <= values.start_time) {
+    trainingFormError.textContent = "End time must be after start time.";
+    trainingFormError.hidden = false;
+    return;
+  }
+  trainingFormError.hidden = true;
+  trainingSave.disabled = true;
+
+  const query = editingTrainingId
+    ? db.from("trainings").update(values).eq("id", editingTrainingId)
+    : db.from("trainings").insert(values);
+  const { data, error } = await query.select().single();
+  trainingSave.disabled = false;
+
+  if (error) {
+    trainingFormError.textContent = "Could not save training: " + error.message;
+    trainingFormError.hidden = false;
+    return;
+  }
+  trainingDialog.close();
+  // Jump to the month of the saved training so you can see it.
+  const [y, m] = data.training_date.split("-").map(Number);
+  viewYear = y;
+  viewMonth = m;
+  loadTrainings();
+});
+document.getElementById("add-training-btn").addEventListener("click", openTrainingForm);
+document.getElementById("training-cancel").addEventListener("click", () => trainingDialog.close());
+
+// ----- cancel (keeps the record) / delete (removes it and its attendance) -----
+async function cancelTraining(id) {
+  const t = findTraining(id);
+  if (!confirm(`Cancel "${t.name}" on ${longDate(t.training_date)}? It stays in the list marked as cancelled.`)) return;
+  showError("");
+  const { data, error } = await db.from("trainings").update({ status: "cancelled" }).eq("id", id).select();
+  if (error || data.length === 0) {
+    showError("Could not cancel training: " + (error ? error.message : "the database did not update it."));
+    return;
+  }
+  loadTrainings();
+}
+
+async function deleteTraining(id) {
+  const t = findTraining(id);
+  if (!confirm(`Delete "${t.name}" on ${longDate(t.training_date)}? Its attendance records will be deleted too. This cannot be undone.`)) return;
+  showError("");
+  const { data, error } = await db.from("trainings").delete().eq("id", id).select();
+  if (error || data.length === 0) {
+    showError("Could not delete training: " + (error ? error.message : "the database did not remove it."));
+    return;
+  }
+  loadTrainings();
+}
+
+
+// =====================================================
+// 7c. ATTENDANCE for one training (table "attendance")
+// One row per (training, student). Clicking Present/Absent saves at once.
+// =====================================================
+const attendanceDialog = document.getElementById("attendance-dialog");
+const attendanceBody = document.getElementById("attendance-body");
+const attendanceError = document.getElementById("attendance-error");
+let openTrainingId = null;
+let attendanceByStudent = {};   // student_id -> "present" | "absent"
+
+function showAttendanceError(text) {
+  attendanceError.textContent = text;
+  attendanceError.hidden = !text;
+}
+
+async function openAttendance(id) {
+  const t = findTraining(id);
+  openTrainingId = id;
+  attendanceByStudent = {};
+  showAttendanceError("");
+  document.getElementById("attendance-title").textContent = t.name;
+  document.getElementById("attendance-info").textContent =
+    `${longDate(t.training_date)} · ${shortTime(t.start_time)}–${shortTime(t.end_time)}` +
+    (t.coach ? " · Coach: " + t.coach : "") + (t.location ? " · " + t.location : "") + " · " + t.status;
+  attendanceBody.innerHTML = '<tr><td colspan="2">Loading...</td></tr>';
+  attendanceDialog.showModal();
+
+  // Always read from the database, so reopening shows what was really saved.
+  const { data, error } = await db.from("attendance").select("student_id, status").eq("training_id", id);
+  if (openTrainingId !== id) return;
+  if (error) {
+    showAttendanceError("Could not load attendance: " + error.message);
+    attendanceBody.innerHTML = "";
+    return;
+  }
+  data.forEach(a => { attendanceByStudent[a.student_id] = a.status; });
+  renderAttendance();
+}
+
+function renderAttendance() {
+  const t = findTraining(openTrainingId);
+  const locked = t.status === "cancelled";
+  attendanceBody.innerHTML = "";
+  students.forEach(function (s) {
+    const status = attendanceByStudent[s.id];
+    const row = document.createElement("tr");
+    row.dataset.id = s.id;
+    row.innerHTML = `
+      <td>${escapeHtml(s.firstName)} ${escapeHtml(s.lastName)}</td>
+      <td>
+        <button data-status="present" class="btn-present ${status === "present" ? "active" : ""}" ${locked ? "disabled" : ""}>Present</button>
+        <button data-status="absent" class="btn-absent ${status === "absent" ? "active" : ""}" ${locked ? "disabled" : ""}>Absent</button>
+        ${status ? "" : '<span class="status-none">Not marked</span>'}
+      </td>`;
+    attendanceBody.appendChild(row);
+  });
+  const values = Object.values(attendanceByStudent);
+  const present = values.filter(v => v === "present").length;
+  const absent = values.filter(v => v === "absent").length;
+  document.getElementById("attendance-summary").textContent = students.length === 0
+    ? "There are no students yet."
+    : locked
+      ? "This training is cancelled, so attendance cannot be changed."
+      : `Present: ${present} · Absent: ${absent} · Not marked: ${students.length - present - absent}`;
+}
+
+attendanceBody.addEventListener("click", async function (event) {
+  const button = event.target.closest("button[data-status]");
+  if (!button) return;
+  const studentId = button.closest("tr").dataset.id;
+  const trainingId = openTrainingId;
+  const status = button.dataset.status;
+  if (attendanceByStudent[studentId] === status) return;
+
+  showAttendanceError("");
+  // upsert = insert, or update if this student already has a row for this training
+  const { data, error } = await db
+    .from("attendance")
+    .upsert({ training_id: trainingId, student_id: studentId, status: status }, { onConflict: "training_id,student_id" })
+    .select("student_id, status")
+    .single();
+  if (error) {
+    showAttendanceError("Could not save attendance: " + error.message);
+    return;
+  }
+  if (openTrainingId !== trainingId) return;
+  attendanceByStudent[data.student_id] = data.status;
+  renderAttendance();
+});
+document.getElementById("attendance-close").addEventListener("click", () => attendanceDialog.close());
+attendanceDialog.addEventListener("close", () => { openTrainingId = null; });
+
+
+// =====================================================
+// 7d. ATTENDANCE HISTORY in the student profile, grouped by month
+// =====================================================
+const historyBox = document.getElementById("attendance-history");
+let historyStudentId = null;
+
+async function loadAttendanceHistory(studentId) {
+  historyStudentId = studentId;
+  historyBox.innerHTML = '<p class="message">Loading...</p>';
+
+  // "trainings(...)" pulls the linked training row through the foreign key.
+  const { data, error } = await db
+    .from("attendance")
+    .select("status, trainings(training_date, start_time, name)")
+    .eq("student_id", studentId);
+  if (historyStudentId !== studentId) return; // another profile was opened meanwhile
+  if (error) {
+    historyBox.innerHTML = `<p class="message error">Could not load history: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  const rows = data.filter(r => r.trainings)
+    .sort((a, b) => (b.trainings.training_date + b.trainings.start_time)
+      .localeCompare(a.trainings.training_date + a.trainings.start_time)); // newest first
+  if (rows.length === 0) {
+    historyBox.innerHTML = '<p class="message">No attendance recorded yet.</p>';
+    return;
+  }
+
+  let html = "";
+  let currentMonth = null;
+  rows.forEach(function (r) {
+    const [y, m, d] = r.trainings.training_date.split("-").map(Number);
+    const monthLabel = `${MONTH_NAMES[m - 1]} ${y}`;
+    if (monthLabel !== currentMonth) {
+      if (currentMonth) html += "</ul>";
+      currentMonth = monthLabel;
+      html += `<div class="history-month">${monthLabel}</div><ul class="history-list">`;
+    }
+    const cls = r.status === "present" ? "status-present" : "status-absent";
+    const label = r.status === "present" ? "Present" : "Absent";
+    html += `<li>${pad(d)}.${pad(m)} — <span class="${cls}">${label}</span> <span class="training-sub">(${escapeHtml(r.trainings.name)})</span></li>`;
+  });
+  historyBox.innerHTML = html + "</ul>";
+}
 
 
 // =====================================================

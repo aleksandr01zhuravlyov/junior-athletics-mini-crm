@@ -159,3 +159,28 @@ dd { margin: 2px 0 0; font-size: 16px; }
 .message { color: var(--grey); margin: 12px 0; }
 .message.error { color: var(--red); background: #fee2e2; padding: 10px 12px; border-radius: 6px; }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---------- Tabs ---------- */
+.tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 2px solid var(--border); }
+.tab { background: none; border: none; border-radius: 6px 6px 0 0; padding: 10px 18px; color: var(--grey); font-size: 15px; }
+.tab.active { color: var(--blue); font-weight: bold; border-bottom: 3px solid var(--blue); margin-bottom: -2px; }
+
+/* ---------- Trainings ---------- */
+.month-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.month-nav select, .month-nav input { padding: 8px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; }
+.month-nav input { width: 80px; }
+.day-heading { margin: 22px 0 6px; color: var(--blue); font-size: 15px; }
+.training-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.training-time { width: 110px; font-weight: bold; }
+.training-main { flex: 1; min-width: 180px; }
+.training-sub { color: var(--grey); font-size: 13px; }
+.badge { font-size: 12px; padding: 3px 8px; border-radius: 10px; text-transform: capitalize; }
+.badge-scheduled { background: var(--blue-light); color: var(--blue); }
+.badge-completed { background: #dcfce7; color: var(--green); }
+.badge-cancelled { background: #fee2e2; color: var(--red); }
+.training-row.is-cancelled .training-main { text-decoration: line-through; opacity: 0.7; }
+dialog.wide { width: 560px; }
+.history-title { margin: 20px 0 6px; color: var(--blue); font-size: 15px; }
+.history-month { margin: 12px 0 4px; font-weight: bold; }
+.history-list { margin: 0; padding-left: 20px; }
+.history-list li { margin: 3px 0; }
