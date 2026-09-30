@@ -430,7 +430,9 @@ function showTab(name) {
   trainingsView.hidden = !onTrainings;
   document.getElementById("tab-students").classList.toggle("active", !onTrainings);
   document.getElementById("tab-trainings").classList.toggle("active", onTrainings);
-  if (onTrainings) loadTrainings();
+  if (onTrainings) loadTrainings().catch(function (err) {
+    showError("Could not load trainings: " + err.message);
+  });
 }
 
 document.querySelector(".tabs").addEventListener("click", function (event) {
