@@ -1,13 +1,14 @@
 # Junior Athletics Mini CRM
 
 A simple mini CRM for tracking junior athletes. Plain HTML, CSS and JavaScript.
-Data is saved in the browser's `localStorage` (on the device you are using).
+Students are stored in a Supabase database; staff log in with email + password.
 
 ## Files
 
 - `index.html` – the page (must stay in the project root)
 - `style.css` – the looks
-- `script.js` – the behaviour
+- `config.js` – Supabase Project URL + publishable key (public values only)
+- `script.js` – the behaviour (login, logout, Supabase CRUD)
 - `.nojekyll` – tells GitHub Pages to serve the files as they are
 
 All file links are relative (for example `href="style.css"`), so the site works
@@ -15,7 +16,10 @@ both when opened locally and when hosted under `https://<user>.github.io/<repo>/
 
 ## Run locally
 
-Open `index.html` in a browser.
+1. Put your Project URL and publishable key in `config.js`.
+   **Never** put a secret / `service_role` key in the frontend.
+2. Create a user in Supabase (Authentication > Users). Sign-up is not in the app.
+3. Open `index.html` in a browser and log in.
 
 ## Deploy with GitHub Pages
 
@@ -26,5 +30,5 @@ Open `index.html` in a browser.
 5. Wait 1–2 minutes. The public URL appears at the top of the Pages settings:
    `https://aleksandr01zhuravlyov.github.io/junior-athletics-mini-crm/`
 
-Note: data is stored per browser and per device, so the phone and the laptop
-each have their own separate list of students.
+Data now lives in Supabase, so every device sees the same students.
+Access is protected by Row Level Security (authenticated users only).

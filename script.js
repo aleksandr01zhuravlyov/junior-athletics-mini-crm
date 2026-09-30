@@ -1,66 +1,68 @@
 // =====================================================
-// 1. THE DATA
-// This is where all student information is stored.
-// It is a list (array) of students. Each student is an object
-// written between { }.
+// 1. SUPABASE CONNECTION
+// Uses only the public Project URL + publishable key from config.js.
+// Student data now lives in the Supabase "students" table.
+// (supabase-js itself keeps the login session in the browser; that is
+// the only thing stored locally. No student data is stored locally.)
 // =====================================================
-const defaultStudents = [
-  { id: 1, firstName: "Emma",   lastName: "Johnson", age: 9,  parentName: "Sarah Johnson", parentPhone: "555-0101", membership: "Monthly",         sessionsRemaining: 8,  status: "none" },
-  { id: 2, firstName: "Liam",   lastName: "Smith",   age: 11, parentName: "David Smith",   parentPhone: "555-0102", membership: "10-Session Pass", sessionsRemaining: 6,  status: "none" },
-  { id: 3, firstName: "Olivia", lastName: "Brown",   age: 8,  parentName: "Karen Brown",   parentPhone: "555-0103", membership: "Monthly",         sessionsRemaining: 12, status: "none" },
-  { id: 4, firstName: "Noah",   lastName: "Davis",   age: 12, parentName: "Mark Davis",    parentPhone: "555-0104", membership: "Drop-in",         sessionsRemaining: 1,  status: "none" },
-  { id: 5, firstName: "Sophia", lastName: "Wilson",  age: 10, parentName: "Anna Wilson",   parentPhone: "555-0105", membership: "10-Session Pass", sessionsRemaining: 3,  status: "none" }
-];
+const configured = !SUPABASE_URL.includes("YOUR-PROJECT-REF") && !SUPABASE_PUBLISHABLE_KEY.includes("YOUR-PUBLISHABLE-KEY");
+const db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
+
+// The students shown on screen: a copy of what the database returned.
+let students = [];
 // status can be: "none" (not marked yet), "present" or "absent"
 
-// The name of our "box" inside localStorage.
-const STORAGE_KEY = "juniorAthleticsStudents";
-
-// LOAD: read the saved students from localStorage.
-// If nothing was saved yet (first visit), use the starter students.
-function loadStudents() {
-  const savedText = localStorage.getItem(STORAGE_KEY); // text, or null
-  if (savedText === null) {
-    return defaultStudents;
-  }
-  const list = JSON.parse(savedText); // turn the text back into a list
-
-  // Old saved students (from before this update) have no id or parent info.
-  // Give them safe defaults so nothing breaks.
-  let nextId = list.reduce((max, s) => Math.max(max, s.id || 0), 0) + 1;
-  list.forEach(function (student) {
-    if (!student.id) student.id = nextId++;
-    if (student.parentName === undefined) student.parentName = "";
-    if (student.parentPhone === undefined) student.parentPhone = "";
-  });
-  return list;
+// The database uses snake_case columns; the page code uses camelCase.
+// This is the ONLY place that translates between the two.
+function fromRow(row) {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    dateOfBirth: row.date_of_birth,
+    parentName: row.parent_name || "",
+    parentPhone: row.parent_phone || "",
+    membership: row.membership_type || "",
+    sessionsRemaining: row.sessions_remaining ?? 0,
+    status: row.status || "none"
+  };
 }
 
-// SAVE: turn the students list into text and store it.
-// We call this every time the data changes.
-function saveStudents() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+// Age is not stored; it is calculated from date_of_birth.
+function calcAge(dateOfBirth) {
+  if (!dateOfBirth) return "-";
+  const [y, m, d] = dateOfBirth.split("-").map(Number);
+  const today = new Date();
+  let age = today.getFullYear() - y;
+  if (today.getMonth() + 1 < m || (today.getMonth() + 1 === m && today.getDate() < d)) age--;
+  return age;
 }
-
-let students = loadStudents();
 
 
 // =====================================================
 // 2. GRAB THINGS FROM THE PAGE
-// We find HTML elements by their id so JavaScript can change them.
 // =====================================================
+const loginView = document.getElementById("login-view");
+const appView = document.getElementById("app-view");
+const loginForm = document.getElementById("login-form");
+const loginError = document.getElementById("login-error");
+const loginSubmit = document.getElementById("login-submit");
+const userBox = document.getElementById("user-box");
+const userEmail = document.getElementById("user-email");
+const appError = document.getElementById("app-error");
+const tableMessage = document.getElementById("table-message");
+
 const tableBody = document.getElementById("student-table-body");
 const presentCount = document.getElementById("present-count");
 const absentCount = document.getElementById("absent-count");
 const totalCount = document.getElementById("total-count");
 const addButton = document.getElementById("add-student-btn");
 
-// The form pop-up (used for both Add and Edit)
 const formDialog = document.getElementById("form-dialog");
 const form = document.getElementById("student-form");
 const formTitle = document.getElementById("form-title");
+const formSave = document.getElementById("form-save");
 
-// The details pop-up
 const detailsDialog = document.getElementById("details-dialog");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
@@ -68,112 +70,209 @@ const detailsBody = document.getElementById("details-body");
 // Which student is being edited? null means "we are adding a new one".
 let editingId = null;
 
-// Names are typed by a person, so make them safe before putting them in HTML.
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// Find one student by id (returns undefined if not found).
 function findStudent(id) {
   return students.find(s => s.id === id);
 }
 
+function showError(text) {
+  appError.textContent = text;
+  appError.hidden = !text;
+}
+
 
 // =====================================================
-// 3. DRAW THE PAGE FROM THE DATA
-// This function wipes the table and rebuilds it from the
-// students list. We call it every time something changes.
+// 3. AUTH: login, logout, and which screen to show
+// =====================================================
+function showLogin() {
+  students = [];
+  render(); // wipe the previous user's rows from the page
+  appView.hidden = true;
+  userBox.hidden = true;
+  loginView.hidden = false;
+}
+
+function showApp(user) {
+  loginView.hidden = true;
+  appView.hidden = false;
+  userBox.hidden = false;
+  userEmail.textContent = user.email;
+  loadStudents();
+}
+
+loginForm.addEventListener("submit", async function (event) {
+  event.preventDefault();
+  loginError.hidden = true;
+  loginSubmit.disabled = true;
+
+  const { error } = await db.auth.signInWithPassword({
+    email: document.getElementById("login-email").value.trim(),
+    password: document.getElementById("login-password").value
+  });
+
+  loginSubmit.disabled = false;
+  if (error) {
+    loginError.textContent = error.message;
+    loginError.hidden = false;
+    return;
+  }
+  loginForm.reset();
+  // On success, onAuthStateChange (below) switches to the app screen.
+});
+
+document.getElementById("logout-btn").addEventListener("click", async function () {
+  const { error } = await db.auth.signOut();
+  if (error) showError(error.message);
+});
+
+
+// =====================================================
+// 4. DRAW THE PAGE FROM THE DATA
 // =====================================================
 function render() {
-  tableBody.innerHTML = ""; // empty the table
+  tableBody.innerHTML = "";
 
-  // Go through each student, one by one
   students.forEach(function (student) {
     let statusText = "Not marked";
     let statusClass = "status-none";
     if (student.status === "present") { statusText = "Present"; statusClass = "status-present"; }
     if (student.status === "absent")  { statusText = "Absent";  statusClass = "status-absent"; }
 
+    // ids are uuid text now, so buttons carry them in data- attributes
+    // and one click listener (below) reads them.
     const row = document.createElement("tr");
+    row.dataset.id = student.id;
     row.innerHTML = `
       <td>${escapeHtml(student.firstName)} ${escapeHtml(student.lastName)}</td>
-      <td>${student.age}</td>
+      <td>${calcAge(student.dateOfBirth)}</td>
       <td>${escapeHtml(student.membership)}</td>
       <td>${student.sessionsRemaining}</td>
       <td class="${statusClass}">${statusText}</td>
       <td>
-        <button class="btn-present ${student.status === "present" ? "active" : ""}"
-                onclick="markPresent(${student.id})">Present</button>
-        <button class="btn-absent ${student.status === "absent" ? "active" : ""}"
-                onclick="markAbsent(${student.id})">Absent</button>
+        <button data-action="present" class="btn-present ${student.status === "present" ? "active" : ""}">Present</button>
+        <button data-action="absent" class="btn-absent ${student.status === "absent" ? "active" : ""}">Absent</button>
       </td>
       <td>
-        <button class="btn-small" onclick="showDetails(${student.id})">View</button>
-        <button class="btn-small" onclick="openEditForm(${student.id})">Edit</button>
-        <button class="btn-small btn-delete" onclick="deleteStudent(${student.id})">Delete</button>
+        <button data-action="view" class="btn-small">View</button>
+        <button data-action="edit" class="btn-small">Edit</button>
+        <button data-action="delete" class="btn-small btn-delete">Delete</button>
       </td>
     `;
     tableBody.appendChild(row);
   });
 
+  tableMessage.hidden = students.length > 0;
+  if (students.length === 0 && tableMessage.textContent === "Loading students...") {
+    tableMessage.textContent = "No students yet.";
+  }
   updateCounters();
 }
 
-
-// =====================================================
-// 4. THE COUNTERS
-// Count how many students have each status.
-// =====================================================
 function updateCounters() {
-  const present = students.filter(s => s.status === "present").length;
-  const absent = students.filter(s => s.status === "absent").length;
-
-  presentCount.textContent = present;
-  absentCount.textContent = absent;
+  presentCount.textContent = students.filter(s => s.status === "present").length;
+  absentCount.textContent = students.filter(s => s.status === "absent").length;
   totalCount.textContent = students.length;
 }
 
+tableBody.addEventListener("click", function (event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = button.closest("tr").dataset.id;
+  const actions = {
+    present: markPresent, absent: markAbsent, view: showDetails,
+    edit: openEditForm, delete: deleteStudent
+  };
+  actions[button.dataset.action](id);
+});
+
 
 // =====================================================
-// 5. THE BUTTONS
+// 5. READ: load students from Supabase
 // =====================================================
+async function loadStudents() {
+  showError("");
+  tableMessage.textContent = "Loading students...";
+  tableMessage.hidden = false;
 
-// Runs when you click "Present" on a student.
-function markPresent(id) {
-  const student = findStudent(id);
+  const { data, error } = await db
+    .from("students")
+    .select("*")
+    .order("last_name")
+    .order("first_name");
 
-  // If they were not already present, use up one session.
-  if (student.status !== "present" && student.sessionsRemaining > 0) {
-    student.sessionsRemaining = student.sessionsRemaining - 1;
+  if (error) {
+    students = [];
+    render();
+    tableMessage.textContent = "";
+    showError("Could not load students: " + error.message);
+    return;
   }
-
-  student.status = "present";
-  saveStudents(); // remember the change
-  render(); // redraw the page with the new data
-}
-
-// Runs when you click "Absent" on a student.
-function markAbsent(id) {
-  const student = findStudent(id);
-
-  // If they had been marked present by mistake, give the session back.
-  if (student.status === "present") {
-    student.sessionsRemaining = student.sessionsRemaining + 1;
-  }
-
-  student.status = "absent";
-  saveStudents(); // remember the change
+  students = data.map(fromRow);
+  tableMessage.textContent = "No students yet.";
   render();
 }
 
+// Put one updated row (returned by the database) back into our list.
+function replaceStudent(row) {
+  const updated = fromRow(row);
+  students = students.map(s => (s.id === updated.id ? updated : s));
+}
+
 
 // =====================================================
-// 6. CRUD: Create, Read, Update, Delete
+// 6. ATTENDANCE: update status + sessions in the database
 // =====================================================
+async function updateStudent(id, changes) {
+  showError("");
+  const { data, error } = await db
+    .from("students")
+    .update(changes)
+    .eq("id", id)
+    .select()
+    .single();
 
-// ---- CREATE (part 1): open the empty form ----
+  if (error) {
+    showError("Could not save: " + error.message);
+    return false;
+  }
+  replaceStudent(data);
+  render();
+  return true;
+}
+
+async function markPresent(id) {
+  const student = findStudent(id);
+  if (student.status === "present") return; // already present, nothing to change
+
+  const changes = { status: "present" };
+  // Use up one session if any are left.
+  if (student.sessionsRemaining > 0) {
+    changes.sessions_remaining = student.sessionsRemaining - 1;
+  }
+  await updateStudent(id, changes);
+}
+
+async function markAbsent(id) {
+  const student = findStudent(id);
+  if (student.status === "absent") return;
+
+  const changes = { status: "absent" };
+  // If they had been marked present by mistake, give the session back.
+  if (student.status === "present") {
+    changes.sessions_remaining = student.sessionsRemaining + 1;
+  }
+  await updateStudent(id, changes);
+}
+
+
+// =====================================================
+// 7. CRUD: Create, Update, Delete
+// =====================================================
 function openAddForm() {
   editingId = null;
   formTitle.textContent = "Add Student";
@@ -181,7 +280,6 @@ function openAddForm() {
   formDialog.showModal();
 }
 
-// ---- UPDATE (part 1): open the form filled with the student's data ----
 function openEditForm(id) {
   const student = findStudent(id);
   editingId = id;
@@ -189,14 +287,14 @@ function openEditForm(id) {
 
   document.getElementById("f-first").value = student.firstName;
   document.getElementById("f-last").value = student.lastName;
-  document.getElementById("f-age").value = student.age;
+  document.getElementById("f-dob").value = student.dateOfBirth || "";
   document.getElementById("f-parent").value = student.parentName;
   document.getElementById("f-phone").value = student.parentPhone;
   document.getElementById("f-sessions").value = student.sessionsRemaining;
 
   // If this student has a custom membership not in the list, add it so it isn't lost.
   const select = document.getElementById("f-membership");
-  if (![...select.options].some(o => o.value === student.membership)) {
+  if (student.membership && ![...select.options].some(o => o.value === student.membership)) {
     select.add(new Option(student.membership));
   }
   select.value = student.membership;
@@ -204,41 +302,52 @@ function openEditForm(id) {
   formDialog.showModal();
 }
 
-// ---- CREATE (part 2) and UPDATE (part 2): runs when you press Save ----
-// If editingId is null we create a new student, otherwise we update one.
-function saveStudentFromForm(event) {
-  event.preventDefault(); // stop the browser reloading the page
+// Runs when you press Save: INSERT if adding, UPDATE if editing.
+async function saveStudentFromForm(event) {
+  event.preventDefault();
 
   const values = {
-    firstName: document.getElementById("f-first").value.trim(),
-    lastName: document.getElementById("f-last").value.trim(),
-    age: Number(document.getElementById("f-age").value),
-    parentName: document.getElementById("f-parent").value.trim(),
-    parentPhone: document.getElementById("f-phone").value.trim(),
-    membership: document.getElementById("f-membership").value,
-    sessionsRemaining: Number(document.getElementById("f-sessions").value)
+    first_name: document.getElementById("f-first").value.trim(),
+    last_name: document.getElementById("f-last").value.trim(),
+    date_of_birth: document.getElementById("f-dob").value,
+    parent_name: document.getElementById("f-parent").value.trim(),
+    parent_phone: document.getElementById("f-phone").value.trim(),
+    membership_type: document.getElementById("f-membership").value,
+    sessions_remaining: Number(document.getElementById("f-sessions").value)
   };
 
+  showError("");
+  formSave.disabled = true;
+
+  let result;
   if (editingId === null) {
-    // CREATE: new id = biggest existing id + 1
-    const newId = students.reduce((max, s) => Math.max(max, s.id), 0) + 1;
-    students.push({ id: newId, ...values, status: "none" });
+    result = await db.from("students").insert({ ...values, status: "none" }).select().single();
   } else {
-    // UPDATE: copy the new values onto the existing student
-    Object.assign(findStudent(editingId), values);
+    result = await db.from("students").update(values).eq("id", editingId).select().single();
+  }
+  formSave.disabled = false;
+
+  if (result.error) {
+    formDialog.close();
+    showError("Could not save student: " + result.error.message);
+    return;
   }
 
-  saveStudents();
+  if (editingId === null) {
+    students.push(fromRow(result.data));
+    students.sort((a, b) => (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
+  } else {
+    replaceStudent(result.data);
+  }
   render();
   formDialog.close();
 }
 
-// ---- READ (one student): show the details pop-up ----
 function showDetails(id) {
   const s = findStudent(id);
   detailsTitle.textContent = s.firstName + " " + s.lastName;
   detailsBody.innerHTML = `
-    <dt>Age</dt><dd>${s.age}</dd>
+    <dt>Date of birth</dt><dd>${escapeHtml(s.dateOfBirth || "-")} (age ${calcAge(s.dateOfBirth)})</dd>
     <dt>Parent name</dt><dd>${escapeHtml(s.parentName) || "-"}</dd>
     <dt>Parent phone</dt><dd>${escapeHtml(s.parentPhone) || "-"}</dd>
     <dt>Membership</dt><dd>${escapeHtml(s.membership)}</dd>
@@ -247,18 +356,28 @@ function showDetails(id) {
   detailsDialog.showModal();
 }
 
-// ---- DELETE: ask first, then remove the student ----
-function deleteStudent(id) {
+async function deleteStudent(id) {
   const s = findStudent(id);
   if (!confirm("Delete " + s.firstName + " " + s.lastName + "? This cannot be undone.")) {
     return;
   }
-  students = students.filter(student => student.id !== id); // keep everyone except this one
-  saveStudents();
+  showError("");
+
+  // .select() makes the database return the deleted rows, so we can detect
+  // "nothing was deleted" (for example if RLS blocked it) instead of failing silently.
+  const { data, error } = await db.from("students").delete().eq("id", id).select();
+  if (error) {
+    showError("Could not delete: " + error.message);
+    return;
+  }
+  if (data.length === 0) {
+    showError("Could not delete: the database did not remove this student.");
+    return;
+  }
+  students = students.filter(student => student.id !== id);
   render();
 }
 
-// Connect the buttons to the functions above
 addButton.addEventListener("click", openAddForm);
 form.addEventListener("submit", saveStudentFromForm);
 document.getElementById("form-cancel").addEventListener("click", () => formDialog.close());
@@ -266,7 +385,26 @@ document.getElementById("details-close").addEventListener("click", () => details
 
 
 // =====================================================
-// 7. START
-// Draw the page once when it first loads.
+// 8. START
+// Show the right screen depending on whether a session exists.
 // =====================================================
-render();
+if (!configured) {
+  loginView.hidden = false;
+  loginError.textContent = "Supabase is not configured. Put your Project URL and publishable key in config.js.";
+  loginError.hidden = false;
+  loginSubmit.disabled = true;
+} else {
+  // Fires on page load (restored session), login and logout.
+  // Not async and not awaiting supabase calls here on purpose (supabase-js can deadlock otherwise).
+  let shownUserId = null;
+  db.auth.onAuthStateChange(function (event, session) {
+    if (session) {
+      if (session.user.id === shownUserId) return; // e.g. token refresh: already showing the app
+      shownUserId = session.user.id;
+      setTimeout(() => showApp(session.user), 0);
+    } else {
+      shownUserId = null;
+      showLogin();
+    }
+  });
+}

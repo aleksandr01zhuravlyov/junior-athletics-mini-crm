@@ -142,3 +142,20 @@ dialog input, dialog select {
 dl { margin: 0; }
 dt { font-size: 12px; text-transform: uppercase; color: var(--grey); margin-top: 10px; }
 dd { margin: 2px 0 0; font-size: 16px; }
+
+/* ---------- Auth + messages ---------- */
+[hidden] { display: none !important; }
+.header { display: flex; justify-content: space-between; align-items: center; }
+.user-box { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.user-box button { background: white; border: none; color: var(--blue); }
+.login-card { max-width: 340px; margin: 40px auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; }
+.login-card h2 { margin-top: 0; color: var(--blue); }
+.login-card label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--grey); }
+.login-card input {
+  display: block; width: 100%; box-sizing: border-box;
+  margin-top: 4px; padding: 8px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.message { color: var(--grey); margin: 12px 0; }
+.message.error { color: var(--red); background: #fee2e2; padding: 10px 12px; border-radius: 6px; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
