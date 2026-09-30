@@ -10,6 +10,8 @@ const db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE
 
 // The students shown on screen: a copy of what the database returned.
 let students = [];
+// Every membership of every student (full history), newest first. See section 7e.
+let memberships = [];
 // status can be: "none" (not marked yet), "present" or "absent"
 
 // The database uses snake_case columns; the page code uses camelCase.
@@ -22,8 +24,6 @@ function fromRow(row) {
     dateOfBirth: row.date_of_birth,
     parentName: row.parent_name || "",
     parentPhone: row.parent_phone || "",
-    membership: row.membership_type || "",
-    sessionsRemaining: row.sessions_remaining ?? 0,
     status: row.status || "none"
   };
 }
@@ -91,6 +91,7 @@ function showError(text) {
 // =====================================================
 function showLogin() {
   students = [];
+  memberships = [];
   trainings = [];
   render(); // wipe the previous user's rows from the page
   renderTrainings();
@@ -146,6 +147,12 @@ function render() {
     if (student.status === "present") { statusText = "Present"; statusClass = "status-present"; }
     if (student.status === "absent")  { statusText = "Absent";  statusClass = "status-absent"; }
 
+    // Membership columns come from the memberships table (see section 7e).
+    const current = pickCurrent(membershipsOf(student.id), todayISO());
+    const membershipText = current ? membershipTypeLabel(current.membership_type) : "None";
+    const sessionsText = current && hasCounter(current) ? current.sessions_remaining : sessionsLabel(current);
+    const sessionsClass = current && hasCounter(current) && current.sessions_remaining <= 1 ? "sessions-low" : "";
+
     // ids are uuid text now, so buttons carry them in data- attributes
     // and one click listener (below) reads them.
     const row = document.createElement("tr");
@@ -153,8 +160,8 @@ function render() {
     row.innerHTML = `
       <td>${escapeHtml(student.firstName)} ${escapeHtml(student.lastName)}</td>
       <td>${calcAge(student.dateOfBirth)}</td>
-      <td>${escapeHtml(student.membership)}</td>
-      <td>${student.sessionsRemaining}</td>
+      <td>${escapeHtml(membershipText)}</td>
+      <td class="${sessionsClass}">${escapeHtml(String(sessionsText))}</td>
       <td class="${statusClass}">${statusText}</td>
       <td>
         <button data-action="present" class="btn-present ${student.status === "present" ? "active" : ""}">Present</button>
@@ -217,6 +224,7 @@ async function loadStudents() {
   }
   students = data.map(fromRow);
   tableMessage.textContent = "No students yet.";
+  await loadMemberships();
   render();
 }
 
@@ -228,7 +236,7 @@ function replaceStudent(row) {
 
 
 // =====================================================
-// 6. ATTENDANCE: update status + sessions in the database
+// 6. TODAY'S STATUS: the Present / Absent buttons in the student list
 // =====================================================
 async function updateStudent(id, changes) {
   showError("");
@@ -252,24 +260,15 @@ async function markPresent(id) {
   const student = findStudent(id);
   if (student.status === "present") return; // already present, nothing to change
 
-  const changes = { status: "present" };
-  // Use up one session if any are left.
-  if (student.sessionsRemaining > 0) {
-    changes.sessions_remaining = student.sessionsRemaining - 1;
-  }
-  await updateStudent(id, changes);
+  // Sessions are handled by memberships (deducted when marked Present in a training).
+  await updateStudent(id, { status: "present" });
 }
 
 async function markAbsent(id) {
   const student = findStudent(id);
   if (student.status === "absent") return;
 
-  const changes = { status: "absent" };
-  // If they had been marked present by mistake, give the session back.
-  if (student.status === "present") {
-    changes.sessions_remaining = student.sessionsRemaining + 1;
-  }
-  await updateStudent(id, changes);
+  await updateStudent(id, { status: "absent" });
 }
 
 
@@ -293,14 +292,6 @@ function openEditForm(id) {
   document.getElementById("f-dob").value = student.dateOfBirth || "";
   document.getElementById("f-parent").value = student.parentName;
   document.getElementById("f-phone").value = student.parentPhone;
-  document.getElementById("f-sessions").value = student.sessionsRemaining;
-
-  // If this student has a custom membership not in the list, add it so it isn't lost.
-  const select = document.getElementById("f-membership");
-  if (student.membership && ![...select.options].some(o => o.value === student.membership)) {
-    select.add(new Option(student.membership));
-  }
-  select.value = student.membership;
 
   formDialog.showModal();
 }
@@ -314,9 +305,7 @@ async function saveStudentFromForm(event) {
     last_name: document.getElementById("f-last").value.trim(),
     date_of_birth: document.getElementById("f-dob").value,
     parent_name: document.getElementById("f-parent").value.trim(),
-    parent_phone: document.getElementById("f-phone").value.trim(),
-    membership_type: document.getElementById("f-membership").value,
-    sessions_remaining: Number(document.getElementById("f-sessions").value)
+    parent_phone: document.getElementById("f-phone").value.trim()
   };
 
   showError("");
@@ -353,9 +342,10 @@ function showDetails(id) {
     <dt>Date of birth</dt><dd>${escapeHtml(s.dateOfBirth || "-")} (age ${calcAge(s.dateOfBirth)})</dd>
     <dt>Parent name</dt><dd>${escapeHtml(s.parentName) || "-"}</dd>
     <dt>Parent phone</dt><dd>${escapeHtml(s.parentPhone) || "-"}</dd>
-    <dt>Membership</dt><dd>${escapeHtml(s.membership)}</dd>
-    <dt>Sessions remaining</dt><dd>${s.sessionsRemaining}</dd>
   `;
+  detailsStudentId = id;
+  showMembershipError("");
+  renderMembershipSection();
   detailsDialog.showModal();
   loadAttendanceHistory(id);
 }
@@ -386,6 +376,7 @@ addButton.addEventListener("click", openAddForm);
 form.addEventListener("submit", saveStudentFromForm);
 document.getElementById("form-cancel").addEventListener("click", () => formDialog.close());
 document.getElementById("details-close").addEventListener("click", () => detailsDialog.close());
+detailsDialog.addEventListener("close", () => { detailsStudentId = null; });
 
 
 // =====================================================
@@ -437,7 +428,10 @@ function showTab(name) {
 
 document.querySelector(".tabs").addEventListener("click", function (event) {
   const tab = event.target.closest("button[data-tab]");
-  if (tab) showTab(tab.dataset.tab);
+  if (!tab) return;
+  showTab(tab.dataset.tab);
+  // Attendance changes on the Trainings tab change sessions, so refresh the student list.
+  if (tab.dataset.tab === "students") loadMemberships().then(render);
 });
 
 function setMonth(year, month) {
@@ -653,7 +647,7 @@ async function openAttendance(id) {
   document.getElementById("attendance-info").textContent =
     `${longDate(t.training_date)} · ${shortTime(t.start_time)}–${shortTime(t.end_time)}` +
     (t.coach ? " · Coach: " + t.coach : "") + (t.location ? " · " + t.location : "") + " · " + t.status;
-  attendanceBody.innerHTML = '<tr><td colspan="2">Loading...</td></tr>';
+  attendanceBody.innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
   attendanceDialog.showModal();
 
   // Always read from the database, so reopening shows what was really saved.
@@ -676,8 +670,13 @@ function renderAttendance() {
     const status = attendanceByStudent[s.id];
     const row = document.createElement("tr");
     row.dataset.id = s.id;
+    const cm = pickCurrent(membershipsOf(s.id), t.training_date);
+    const cmText = cm
+      ? `${membershipTypeLabel(cm.membership_type)}${hasCounter(cm) ? " · " + cm.sessions_remaining + " left" : ""}`
+      : "No active membership";
     row.innerHTML = `
       <td>${escapeHtml(s.firstName)} ${escapeHtml(s.lastName)}</td>
+      <td class="${cm ? "" : "status-none"}">${escapeHtml(cmText)}</td>
       <td>
         <button data-status="present" class="btn-present ${status === "present" ? "active" : ""}" ${locked ? "disabled" : ""}>Present</button>
         <button data-status="absent" class="btn-absent ${status === "absent" ? "active" : ""}" ${locked ? "disabled" : ""}>Absent</button>
@@ -716,6 +715,9 @@ attendanceBody.addEventListener("click", async function (event) {
   }
   if (openTrainingId !== trainingId) return;
   attendanceByStudent[data.student_id] = data.status;
+  // The database just deducted / returned a session: reload so the numbers on screen are real.
+  await loadMemberships();
+  if (openTrainingId !== trainingId) return;
   renderAttendance();
 });
 document.getElementById("attendance-close").addEventListener("click", () => attendanceDialog.close());
@@ -765,6 +767,236 @@ async function loadAttendanceHistory(studentId) {
     html += `<li>${pad(d)}.${pad(m)} — <span class="${cls}">${label}</span> <span class="training-sub">(${escapeHtml(r.trainings.name)})</span></li>`;
   });
   historyBox.innerHTML = html + "</ul>";
+}
+
+
+// =====================================================
+// 7e. MEMBERSHIPS (table "memberships")
+// One row per purchased membership; history is never overwritten.
+// Sessions are deducted / returned by the database when attendance is
+// marked (see supabase/memberships.sql), so this code only READS the numbers.
+// Rules that need no database live in memberships.js.
+// =====================================================
+const membershipDialog = document.getElementById("membership-dialog");
+const membershipForm = document.getElementById("membership-form");
+const membershipFormError = document.getElementById("membership-form-error");
+const membershipSave = document.getElementById("membership-save");
+const typeSelect = document.getElementById("m-type");
+const endInput = document.getElementById("m-end");
+let detailsStudentId = null;      // student whose profile is open
+let editingMembershipId = null;   // null = adding a new membership
+let endEdited = false;            // stop auto-suggesting the expiration once you typed one
+
+Object.entries(MEMBERSHIP_TYPES).forEach(([value, t]) => typeSelect.add(new Option(t.label, value)));
+
+function membershipsOf(studentId) {
+  return memberships.filter(m => m.student_id === studentId);
+}
+
+function shortDate(iso) {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+function showMembershipError(text) {
+  const box = document.getElementById("membership-error");
+  box.textContent = text;
+  box.hidden = !text;
+}
+
+async function loadMemberships() {
+  const { data, error } = await db
+    .from("memberships")
+    .select("*")
+    .order("start_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    memberships = [];
+    showError("Could not load memberships: " + error.message + " (Was supabase/memberships.sql run?)");
+    return false;
+  }
+  memberships = data;
+  return true;
+}
+
+// Current membership box + full history table inside the student profile.
+function renderMembershipSection() {
+  if (!detailsStudentId) return;
+  const list = membershipsOf(detailsStudentId);
+  const today = todayISO();
+  const current = pickCurrent(list, today);
+  const upcoming = pickUpcoming(list, today);
+  const box = document.getElementById("current-membership");
+
+  if (current) {
+    const counter = hasCounter(current);
+    box.className = "current-membership";
+    box.innerHTML = `
+      <div class="cm-type">${escapeHtml(membershipTypeLabel(current.membership_type))}
+        <span class="badge badge-active">active</span></div>
+      ${counter
+        ? `<div class="cm-sessions ${current.sessions_remaining <= 1 ? "sessions-low" : ""}">${current.sessions_remaining} of ${current.sessions_purchased} sessions remaining</div>`
+        : `<div class="cm-sessions">${escapeHtml(sessionsLabel(current))}</div>`}
+      <div class="cm-sub">Valid ${shortDate(current.start_date)} – ${shortDate(current.expiration_date)} · price ${Number(current.price).toFixed(2)}</div>`;
+  } else {
+    box.className = "current-membership is-none";
+    box.innerHTML = `
+      <div class="cm-type">No active membership</div>
+      ${upcoming ? `<div class="cm-sub">Next: ${escapeHtml(membershipTypeLabel(upcoming.membership_type))} starts ${shortDate(upcoming.start_date)}</div>` : ""}`;
+  }
+
+  const historyEl = document.getElementById("membership-history");
+  if (list.length === 0) {
+    historyEl.innerHTML = '<p class="message">No memberships yet.</p>';
+    return;
+  }
+  historyEl.innerHTML = `
+    <table class="membership-table">
+      <thead><tr><th>Type</th><th>Period</th><th>Sessions</th><th>Price</th><th>Status</th><th></th></tr></thead>
+      <tbody>${list.map(function (m) {
+        const status = effectiveStatus(m, today);
+        return `<tr data-id="${m.id}">
+          <td>${escapeHtml(membershipTypeLabel(m.membership_type))}</td>
+          <td>${shortDate(m.start_date)} – ${shortDate(m.expiration_date)}</td>
+          <td>${hasCounter(m) ? `${m.sessions_remaining} / ${m.sessions_purchased}` : "-"}</td>
+          <td>${Number(m.price).toFixed(2)}</td>
+          <td><span class="badge badge-${status}">${status.replace("_", " ")}</span></td>
+          <td>
+            <button data-action="edit" class="btn-small">Edit</button>
+            ${status === "active" ? '<button data-action="cancel" class="btn-small btn-delete">Cancel</button>' : ""}
+          </td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>`;
+}
+
+document.getElementById("membership-history").addEventListener("click", function (event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const id = button.closest("tr").dataset.id;
+  if (button.dataset.action === "edit") openMembershipForm(id);
+  else cancelMembership(id);
+});
+
+// Show only the fields that make sense for the chosen type.
+function updateMembershipFormFields() {
+  const type = MEMBERSHIP_TYPES[typeSelect.value];
+  const counter = type.counter !== "none";
+  document.getElementById("m-purchased-label").hidden = !counter;
+  document.getElementById("m-remaining-label").hidden = !counter || editingMembershipId === null;
+  document.getElementById("m-purchased").required = type.counter === "required";
+  document.getElementById("m-hint").textContent =
+    type.counter === "none" ? "This membership has no session counter."
+    : type.counter === "optional" ? "Sessions are optional. Leave empty for a membership without a counter."
+    : "Sessions are subtracted when the student is marked Present in a training.";
+}
+
+function suggestExpiration() {
+  const start = document.getElementById("m-start").value;
+  if (!endEdited && start) endInput.value = suggestedExpiration(typeSelect.value, start);
+}
+
+typeSelect.addEventListener("change", function () {
+  if (editingMembershipId === null) {
+    const sessions = MEMBERSHIP_TYPES[typeSelect.value].sessions;
+    document.getElementById("m-purchased").value = sessions === null ? "" : sessions;
+  }
+  updateMembershipFormFields();
+  suggestExpiration();
+});
+document.getElementById("m-start").addEventListener("change", suggestExpiration);
+endInput.addEventListener("input", () => { endEdited = true; });
+
+function openMembershipForm(id) {
+  editingMembershipId = typeof id === "string" ? id : null;
+  membershipForm.reset();
+  membershipFormError.hidden = true;
+  const editing = editingMembershipId !== null;
+  document.getElementById("membership-form-title").textContent = editing ? "Edit Membership" : "Add Membership";
+  document.getElementById("m-status-label").hidden = !editing;
+  typeSelect.disabled = editing;   // wrong type? cancel it and add the right one (keeps history honest)
+  endEdited = editing;
+
+  if (editing) {
+    const m = memberships.find(x => x.id === editingMembershipId);
+    typeSelect.value = m.membership_type;
+    document.getElementById("m-start").value = m.start_date;
+    endInput.value = m.expiration_date;
+    document.getElementById("m-purchased").value = m.sessions_purchased ?? "";
+    document.getElementById("m-remaining").value = m.sessions_remaining ?? "";
+    document.getElementById("m-price").value = m.price;
+    document.getElementById("m-status").value = m.status === "cancelled" ? "cancelled" : "active";
+  } else {
+    typeSelect.value = "monthly_unlimited";
+    document.getElementById("m-start").value = todayISO();
+    endEdited = false;
+    suggestExpiration();
+  }
+  updateMembershipFormFields();
+  membershipDialog.showModal();
+}
+
+membershipForm.addEventListener("submit", async function (event) {
+  event.preventDefault();
+  const type = MEMBERSHIP_TYPES[typeSelect.value];
+  const editing = editingMembershipId !== null;
+  const start = document.getElementById("m-start").value;
+  const end = endInput.value;
+  const purchasedText = document.getElementById("m-purchased").value;
+  const remainingText = document.getElementById("m-remaining").value;
+  const fail = text => { membershipFormError.textContent = text; membershipFormError.hidden = false; };
+
+  if (end < start) return fail("Expiration date must not be before the start date.");
+
+  let purchased = null;
+  let remaining = null;
+  if (type.counter !== "none" && purchasedText !== "") {
+    purchased = Number(purchasedText);
+    if (!Number.isInteger(purchased) || purchased < 1) return fail("Sessions purchased must be a whole number of 1 or more.");
+    remaining = editing && remainingText !== "" ? Number(remainingText) : purchased;
+    if (!Number.isInteger(remaining) || remaining < 0) return fail("Sessions remaining must be a whole number, 0 or more.");
+    if (remaining > purchased) return fail("Sessions remaining cannot be more than sessions purchased.");
+  } else if (type.counter === "required") {
+    return fail("Sessions purchased is required for this type.");
+  }
+
+  const values = {
+    start_date: start, expiration_date: end,
+    sessions_purchased: purchased, sessions_remaining: remaining,
+    price: Number(document.getElementById("m-price").value)
+  };
+  if (editing) values.status = document.getElementById("m-status").value;
+
+  membershipFormError.hidden = true;
+  membershipSave.disabled = true;
+  const query = editing
+    ? db.from("memberships").update(values).eq("id", editingMembershipId)
+    : db.from("memberships").insert({ ...values, student_id: detailsStudentId, membership_type: typeSelect.value });
+  const { error } = await query.select().single();
+  membershipSave.disabled = false;
+  if (error) return fail("Could not save membership: " + error.message);
+
+  membershipDialog.close();
+  await loadMemberships();
+  renderMembershipSection();
+  render();
+});
+document.getElementById("add-membership-btn").addEventListener("click", openMembershipForm);
+document.getElementById("membership-cancel").addEventListener("click", () => membershipDialog.close());
+
+// Cancelling keeps the record in the history (status "cancelled").
+async function cancelMembership(id) {
+  const m = memberships.find(x => x.id === id);
+  if (!confirm(`Cancel this ${membershipTypeLabel(m.membership_type)} membership? It stays in the history as cancelled.`)) return;
+  showMembershipError("");
+  const { data, error } = await db.from("memberships").update({ status: "cancelled" }).eq("id", id).select();
+  if (error || data.length === 0) {
+    showMembershipError("Could not cancel membership: " + (error ? error.message : "the database did not update it."));
+    return;
+  }
+  await loadMemberships();
+  renderMembershipSection();
+  render();
 }
 
 
