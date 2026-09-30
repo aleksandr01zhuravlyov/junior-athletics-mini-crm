@@ -114,3 +114,31 @@ button {
 .status-present { color: var(--green); font-weight: bold; }
 .status-absent  { color: var(--red);   font-weight: bold; }
 .status-none    { color: var(--grey); }
+
+/* ---------- Manage buttons in each row ---------- */
+.btn-small { padding: 5px 10px; margin-right: 4px; background: white; border: 1px solid var(--border); }
+.btn-small:hover { background: var(--blue-light); }
+.btn-delete { border-color: var(--red); color: var(--red); }
+.btn-delete:hover { background: #fee2e2; }
+
+/* ---------- Pop-up windows (dialogs) ---------- */
+dialog {
+  border: none;
+  border-radius: 10px;
+  padding: 24px;
+  width: 340px;
+  max-width: 90vw;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+dialog h2 { margin-top: 0; color: var(--blue); }
+dialog label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--grey); }
+dialog input, dialog select {
+  display: block; width: 100%; box-sizing: border-box;
+  margin-top: 4px; padding: 8px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+dl { margin: 0; }
+dt { font-size: 12px; text-transform: uppercase; color: var(--grey); margin-top: 10px; }
+dd { margin: 2px 0 0; font-size: 16px; }
