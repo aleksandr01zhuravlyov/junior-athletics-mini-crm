@@ -9,10 +9,18 @@ Students are stored in a Supabase database; staff log in with email + password.
 - `style.css` – the looks
 - `config.js` – Supabase Project URL + publishable key (public values only)
 - `script.js` – the behaviour (login, logout, Supabase CRUD)
+- `supabase/trainings_attendance.sql` – creates the `trainings` and `attendance` tables + RLS policies
 - `.nojekyll` – tells GitHub Pages to serve the files as they are
 
 All file links are relative (for example `href="style.css"`), so the site works
 both when opened locally and when hosted under `https://<user>.github.io/<repo>/`.
+
+## Trainings and attendance setup (one time)
+
+1. Supabase > **SQL Editor** > New query.
+2. Paste the contents of `supabase/trainings_attendance.sql` and click **Run** (safe to re-run).
+3. Reload the CRM. The **Trainings** tab shows sessions by month; open a session to mark
+   students Present/Absent. Each student's **View** window shows Attendance History by month.
 
 ## Run locally
 

@@ -38,6 +38,14 @@
 
     <p class="message error" id="app-error" hidden></p>
 
+    <!-- Section tabs -->
+    <nav class="tabs">
+      <button type="button" class="tab active" id="tab-students" data-tab="students">Students</button>
+      <button type="button" class="tab" id="tab-trainings" data-tab="trainings">Trainings</button>
+    </nav>
+
+    <div id="students-view">
+
     <!-- Dashboard: the boxes at the top -->
     <section class="dashboard">
       <div class="card">
@@ -79,6 +87,28 @@
       <p class="message" id="table-message">Loading students...</p>
     </section>
 
+    </div>
+
+    <!-- Trainings section -->
+    <section id="trainings-view" hidden>
+      <div class="students-header">
+        <h2>Trainings</h2>
+        <button class="btn-primary" id="add-training-btn">+ New Training</button>
+      </div>
+
+      <!-- Month / year navigation -->
+      <div class="month-nav">
+        <button type="button" id="month-prev" aria-label="Previous month">&larr;</button>
+        <select id="month-select" aria-label="Month"></select>
+        <input id="year-input" type="number" min="2000" max="2100" aria-label="Year">
+        <button type="button" id="month-next" aria-label="Next month">&rarr;</button>
+        <button type="button" id="month-today">This month</button>
+      </div>
+
+      <div id="training-list"></div>
+      <p class="message" id="training-message">Loading trainings...</p>
+    </section>
+
   </main>
 
   <!-- Add / Edit form (one form used for both) -->
@@ -105,10 +135,52 @@
     </form>
   </dialog>
 
+  <!-- Training add / edit form -->
+  <dialog id="training-dialog">
+    <form id="training-form">
+      <h2 id="training-form-title">New Training</h2>
+      <label>Date <input id="t-date" type="date" required></label>
+      <label>Start time <input id="t-start" type="time" required></label>
+      <label>End time <input id="t-end" type="time" required></label>
+      <label>Training name / group <input id="t-name" required></label>
+      <label>Coach <input id="t-coach"></label>
+      <label>Location <input id="t-location"></label>
+      <label>Status
+        <select id="t-status">
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <p class="message error" id="training-form-error" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="training-cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="training-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Attendance for one training -->
+  <dialog id="attendance-dialog" class="wide">
+    <h2 id="attendance-title"></h2>
+    <p class="message" id="attendance-info"></p>
+    <p class="message error" id="attendance-error" hidden></p>
+    <table>
+      <thead><tr><th>Student</th><th>Attendance</th></tr></thead>
+      <tbody id="attendance-body"></tbody>
+    </table>
+    <p class="message" id="attendance-summary"></p>
+    <div class="dialog-buttons">
+      <button type="button" id="attendance-close">Close</button>
+    </div>
+  </dialog>
+
   <!-- Details view -->
   <dialog id="details-dialog">
     <h2 id="details-title"></h2>
     <dl id="details-body"></dl>
+    <h3 class="history-title">Attendance History</h3>
+    <div id="attendance-history"></div>
     <div class="dialog-buttons">
       <button type="button" id="details-close">Close</button>
     </div>
