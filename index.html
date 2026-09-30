@@ -50,6 +50,7 @@
             <th>Sessions Left</th>
             <th>Today</th>
             <th>Attendance</th>
+            <th>Manage</th>
           </tr>
         </thead>
         <!-- JavaScript fills this empty body with one row per student -->
@@ -58,6 +59,39 @@
     </section>
 
   </main>
+
+  <!-- Add / Edit form (one form used for both) -->
+  <dialog id="form-dialog">
+    <form id="student-form">
+      <h2 id="form-title">Add Student</h2>
+      <label>First name <input id="f-first" required></label>
+      <label>Last name <input id="f-last" required></label>
+      <label>Age <input id="f-age" type="number" min="1" max="99" required></label>
+      <label>Parent name <input id="f-parent" required></label>
+      <label>Parent phone <input id="f-phone" type="tel" required></label>
+      <label>Membership type
+        <select id="f-membership">
+          <option>Monthly</option>
+          <option>10-Session Pass</option>
+          <option>Drop-in</option>
+        </select>
+      </label>
+      <label>Sessions remaining <input id="f-sessions" type="number" min="0" required></label>
+      <div class="dialog-buttons">
+        <button type="button" id="form-cancel">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Details view -->
+  <dialog id="details-dialog">
+    <h2 id="details-title"></h2>
+    <dl id="details-body"></dl>
+    <div class="dialog-buttons">
+      <button type="button" id="details-close">Close</button>
+    </div>
+  </dialog>
 
   <!-- Connect the JavaScript file (the brain). It goes last so the page exists first. -->
   <script src="script.js"></script>
