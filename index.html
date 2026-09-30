@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Junior Athletics Mini CRM</title>
+
+  <!-- Connect the CSS file (the looks) -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="header">
+    <h1>Junior Athletics</h1>
+    <p>Mini CRM</p>
+  </header>
+
+  <main class="container">
+
+    <!-- Dashboard: the boxes at the top -->
+    <section class="dashboard">
+      <div class="card">
+        <h2>Present Today</h2>
+        <p class="big-number" id="present-count">0</p>
+      </div>
+      <div class="card">
+        <h2>Absent Today</h2>
+        <p class="big-number" id="absent-count">0</p>
+      </div>
+      <div class="card">
+        <h2>Total Students</h2>
+        <p class="big-number" id="total-count">0</p>
+      </div>
+    </section>
+
+    <!-- Student list -->
+    <section class="students">
+      <div class="students-header">
+        <h2>Students</h2>
+        <button class="btn-primary" id="add-student-btn">+ Add Student</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Age</th>
+            <th>Membership</th>
+            <th>Sessions Left</th>
+            <th>Today</th>
+            <th>Attendance</th>
+          </tr>
+        </thead>
+        <!-- JavaScript fills this empty body with one row per student -->
+        <tbody id="student-table-body"></tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <!-- Connect the JavaScript file (the brain). It goes last so the page exists first. -->
+  <script src="script.js"></script>
+</body>
+</html>
