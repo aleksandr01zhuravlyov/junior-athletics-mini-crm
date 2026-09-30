@@ -4,7 +4,7 @@
 // It is a list (array) of students. Each student is an object
 // written between { }.
 // =====================================================
-let students = [
+const defaultStudents = [
   { firstName: "Emma",  lastName: "Johnson", age: 9,  membership: "Monthly",  sessionsRemaining: 8,  status: "none" },
   { firstName: "Liam",  lastName: "Smith",   age: 11, membership: "10-Session Pass", sessionsRemaining: 6, status: "none" },
   { firstName: "Olivia", lastName: "Brown",  age: 8,  membership: "Monthly",  sessionsRemaining: 12, status: "none" },
@@ -12,6 +12,27 @@ let students = [
   { firstName: "Sophia", lastName: "Wilson", age: 10, membership: "10-Session Pass", sessionsRemaining: 3, status: "none" }
 ];
 // status can be: "none" (not marked yet), "present" or "absent"
+
+// The name of our "box" inside localStorage.
+const STORAGE_KEY = "juniorAthleticsStudents";
+
+// LOAD: read the saved students from localStorage.
+// If nothing was saved yet (first visit), use the starter students.
+function loadStudents() {
+  const savedText = localStorage.getItem(STORAGE_KEY); // text, or null
+  if (savedText === null) {
+    return defaultStudents;
+  }
+  return JSON.parse(savedText); // turn the text back into a list
+}
+
+// SAVE: turn the students list into text and store it.
+// We call this every time the data changes.
+function saveStudents() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+}
+
+let students = loadStudents();
 
 
 // =====================================================
@@ -89,6 +110,7 @@ function markPresent(index) {
   }
 
   student.status = "present";
+  saveStudents(); // remember the change
   render(); // redraw the page with the new data
 }
 
@@ -102,6 +124,7 @@ function markAbsent(index) {
   }
 
   student.status = "absent";
+  saveStudents(); // remember the change
   render();
 }
 
@@ -131,6 +154,7 @@ addButton.addEventListener("click", function () {
     status: "none"
   });
 
+  saveStudents(); // remember the new student
   render();
 });
 
